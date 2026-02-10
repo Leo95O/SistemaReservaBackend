@@ -1,31 +1,38 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
-import { Zone } from '../../zones/entities/zone.entity';
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm'; // Solución: Importar OneToMany
+import { Zone } from '@modules/zones/entities/zone.entity'; // Solución: Alias limpio
+// Nota: Como Reservation es una relación circular, a veces requerimos forwardRef, 
+// pero por ahora importaremos normal usando el alias.
+import { Reservation } from '@modules/reservations/entities/reservation.entity'; // Solución: Importar Reservation
 
 @Entity('restaurant_tables')
 export class TableEntity {
   @PrimaryGeneratedColumn('uuid')
-  id: string;
+  id !: string;
 
   @Column()
-  code: string; // Ej: T-01
+  code !: string; 
 
   @Column('float')
-  x: number;
+  x !: number;
 
   @Column('float')
-  y: number;
+  y !: number;
 
   @Column('float', { default: 0 })
-  rotation: number;
+  rotation !: number;
 
   @Column('int')
-  capacity: number;
+  capacity !: number;
 
   @Column({ default: true })
-  isActive: boolean;
+  isActive !: boolean;
 
-  // Relación: Muchas Mesas pertenecen a una Zona
+  // Relación con Zona
   @ManyToOne(() => Zone, (zone) => zone.tables, { onDelete: 'CASCADE' })
   @JoinColumn({ name: 'zone_id' })
-  zone: Zone;
+  zone !: Zone;
+
+  // Solución: Relación agregada correctamente sin texto basura
+  @OneToMany(() => Reservation, (reservation) => reservation.table)
+  reservations !: Reservation[];
 }

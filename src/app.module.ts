@@ -3,23 +3,27 @@ import { ConfigModule } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
-import { ZonesModule } from './modules/zones/zones.module';
-import { TablesModule } from './modules/tables/tables.module';
-import { BranchesModule } from './modules/branches/branches.module';
+// import { User } from '@modules/users/entities/user.entity'; // Ejemplo de cómo se vería con alias a futuro
 
 @Module({
   imports: [
-    ConfigModule.forRoot(), // 1. Leer .env
-    TypeOrmModule.forRoot({ // 2. Conectar a Postgres
+    ConfigModule.forRoot(),
+    TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST,
-      port: +process.env.DB_PORT,
+      // Solución: Validación segura. Si es undefined, usa 5432.
+      port: Number(process.env.DB_PORT) || 5432, 
       username: process.env.DB_USERNAME,
       password: process.env.DB_PASSWORD,
       database: process.env.DB_NAME,
       autoLoadEntities: true,
       synchronize: true, 
-    }), ZonesModule, TablesModule, BranchesModule,
+    }),
+    // Aquí irían tus módulos importados:
+    // BranchesModule,
+    // ZonesModule,
+    // TablesModule,
+    // ReservationsModule
   ],
   controllers: [AppController],
   providers: [AppService],

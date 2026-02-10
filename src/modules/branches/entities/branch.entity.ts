@@ -3,23 +3,23 @@ import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateCol
 @Entity('branches') // Nombre de la tabla en Postgres
 export class Branch {
   @PrimaryGeneratedColumn('uuid') // ID único tipo texto largo
-  id: string;
+  id !: string;
 
   @Column('text')
-  name: string;
+  name !: string;
 
   @Column('text', { nullable: true })
-  address: string;
+  address !: string;
 
   @Column('text', { nullable: true })
-  phone: string;
+  phone !: string;
 
   @Column('boolean', { default: true })
-  isActive: boolean;
+  isActive !: boolean;
 
   @CreateDateColumn()
-  createdAt: Date;
+  createdAt !: Date;
 
   @UpdateDateColumn()
-  updatedAt: Date;
+  updatedAt !: Date;
 }
