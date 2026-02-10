@@ -4,6 +4,8 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { AppController } from './app.controller';
 import { AppService } from './app.service';
 // import { User } from '@modules/users/entities/user.entity'; // Ejemplo de cómo se vería con alias a futuro
+import { UsersModule } from './modules/users/users.module';
+import { RedisModule } from './core/redis/redis.module';
 
 @Module({
   imports: [
@@ -19,6 +21,8 @@ import { AppService } from './app.service';
       autoLoadEntities: true,
       synchronize: true, 
     }),
+    UsersModule,
+    RedisModule,
     // Aquí irían tus módulos importados:
     // BranchesModule,
     // ZonesModule,

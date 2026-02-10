@@ -21,7 +21,8 @@
     "paths": {
       "@modules/*": ["./src/modules/*"], 
       "@common/*": ["./src/common/*"],
-      "@config/*": ["./src/config/*"]
+      "@config/*": ["./src/config/*"],
+      "@core/*": ["./src/core/*"]
     }
     // -------------------------------------------
   }
