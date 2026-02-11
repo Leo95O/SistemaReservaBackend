@@ -1,25 +1,36 @@
 import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn } from 'typeorm';
 
-@Entity('branches') // Nombre de la tabla en Postgres
+@Entity('branches')
 export class Branch {
-  @PrimaryGeneratedColumn('uuid') // ID único tipo texto largo
-  id !: string;
+  @PrimaryGeneratedColumn('uuid')
+  id: string;
 
   @Column('text')
-  name !: string;
+  name: string;
 
   @Column('text', { nullable: true })
-  address !: string;
+  address: string;
 
   @Column('text', { nullable: true })
-  phone !: string;
+  phone: string;
 
-  @Column('boolean', { default: true })
-  isActive !: boolean;
+  // --- CONFIGURACIÓN DE HORARIOS ---
+  
+  // Guardamos el horario como un objeto JSON simple
+  // Ej: { "mon": { "open": "08:00", "close": "22:00", "isOpen": true }, ... }
+  @Column({ type: 'jsonb', nullable: true })
+  schedule: Record<string, any>;
+
+  // Duración por defecto de las reservas en esta sede (minutos)
+  @Column({ type: 'int', default: 90 })
+  defaultReservationDuration: number;
+
+  @Column({ default: true })
+  isActive: boolean;
 
   @CreateDateColumn()
-  createdAt !: Date;
+  createdAt: Date;
 
   @UpdateDateColumn()
-  updatedAt !: Date;
+  updatedAt: Date;
 }

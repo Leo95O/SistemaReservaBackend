@@ -1,50 +1,64 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
 import { TableEntity } from '../../tables/entities/table.entity';
 
 export enum ReservationStatus {
-  PENDING = 'PENDING',       // Bloqueo temporal (Naranja)
-  CONFIRMED = 'CONFIRMED',   // Pagada/Confirmada (Rojo)
-  CANCELED = 'CANCELED',     // Cancelada (Verde de nuevo)
-  COMPLETED = 'COMPLETED',   // Ya comieron y se fueron
+  PENDING = 'PENDING',       // Solicitada (falta confirmar)
+  CONFIRMED = 'CONFIRMED',   // Confirmada por el local (Bloquea mesa)
+  SEATED = 'SEATED',         // Clientes comiendo (Mesa en Rojo)
+  COMPLETED = 'COMPLETED',   // Pagaron y se fueron (Libera mesa)
+  CANCELED = 'CANCELED',     // Cancelada por cliente/local
+  NO_SHOW = 'NO_SHOW',       // No se presentaron
 }
 
 @Entity('reservations')
 export class Reservation {
   @PrimaryGeneratedColumn('uuid')
-  id !: string;
+  id: string;
 
   @Column('text')
-  customerName !: string;
+  customerName: string;
 
   @Column('text', { nullable: true })
-  customerEmail !: string;
+  customerEmail: string;
 
   @Column('text', { nullable: true })
-  customerPhone !: string;
+  customerPhone: string;
 
+  // --- LÓGICA TEMPORAL ---
+  
   @Column('timestamp')
-  reservationTime !: Date; // Fecha y hora de la reserva
+  startTime: Date; // Reemplaza a reservationTime para ser más explícito
+
+  @Column('int', { default: 90 }) 
+  duration: number; // Duración estimada en minutos
+
+  // --- CAPACIDAD ---
 
   @Column('int')
-  pax !: number; // Cantidad de personas
+  pax: number;
 
   @Column({
     type: 'enum',
     enum: ReservationStatus,
     default: ReservationStatus.PENDING,
   })
-  status !: ReservationStatus;
+  status: ReservationStatus;
+
+  @Column('text', { nullable: true })
+  notes: string; // Notas de alergias o preferencias
+
+  // --- RELACIONES ---
+  
+  @ManyToOne(() => TableEntity, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'table_id' })
+  table: TableEntity;
+
+  @Column({ nullable: true }) 
+  tableId: string;
 
   @CreateDateColumn()
-  createdAt !: Date;
+  createdAt: Date;
 
-  // RELACIONES
-  // Muchas reservas pueden ser para una mesa (en diferentes horarios)
-  @ManyToOne(() => TableEntity, (table) => table.reservations, { onDelete: 'CASCADE' })
-  @JoinColumn({ name: 'table_id' })
-  table !: TableEntity;
-
-  // Columna auxiliar para tener el ID a la mano sin cargar toda la relación
-  @Column({ nullable: true }) 
-  tableId !: string;
-}
+  @UpdateDateColumn()
+  updatedAt: Date;
+} 
