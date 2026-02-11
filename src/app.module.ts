@@ -6,14 +6,14 @@ import { AppService } from './app.service';
 // import { User } from '@modules/users/entities/user.entity'; // Ejemplo de cómo se vería con alias a futuro
 import { UsersModule } from './modules/users/users.module';
 import { RedisModule } from './core/redis/redis.module';
+import { AuthModule } from './modules/auth/auth.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot(),
+    ConfigModule.forRoot({ isGlobal: true }),
     TypeOrmModule.forRoot({
       type: 'postgres',
       host: process.env.DB_HOST,
-      // Solución: Validación segura. Si es undefined, usa 5432.
       port: Number(process.env.DB_PORT) || 5432, 
       username: process.env.DB_USERNAME,
       password: process.env.DB_PASSWORD,
@@ -23,11 +23,8 @@ import { RedisModule } from './core/redis/redis.module';
     }),
     UsersModule,
     RedisModule,
-    // Aquí irían tus módulos importados:
-    // BranchesModule,
-    // ZonesModule,
-    // TablesModule,
-    // ReservationsModule
+    AuthModule,
+
   ],
   controllers: [AppController],
   providers: [AppService],

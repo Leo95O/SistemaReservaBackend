@@ -1,38 +1,45 @@
-import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, OneToMany, JoinColumn } from 'typeorm'; // Solución: Importar OneToMany
-import { Zone } from '@modules/zones/entities/zone.entity'; // Solución: Alias limpio
-// Nota: Como Reservation es una relación circular, a veces requerimos forwardRef, 
-// pero por ahora importaremos normal usando el alias.
-import { Reservation } from '@modules/reservations/entities/reservation.entity'; // Solución: Importar Reservation
+import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
+import { Zone } from '../../zones/entities/zone.entity';
 
-@Entity('restaurant_tables')
+@Entity('tables')
 export class TableEntity {
   @PrimaryGeneratedColumn('uuid')
-  id !: string;
+  id: string;
 
   @Column()
-  code !: string; 
+  name: string; // Ej: "Mesa 1", "Barra 2"
 
-  @Column('float')
-  x !: number;
+  // NUEVO: Posición X e Y (relativa a la zona, en metros)
+  @Column({ type: 'float', default: 0 })
+  x: number;
 
-  @Column('float')
-  y !: number;
+  @Column({ type: 'float', default: 0 })
+  y: number;
 
-  @Column('float', { default: 0 })
-  rotation !: number;
+  // NUEVO: Dimensiones físicas reales (en metros)
+  @Column({ type: 'float', default: 1.0 }) // Ancho
+  width: number;
 
-  @Column('int')
-  capacity !: number;
+  @Column({ type: 'float', default: 1.0 }) // Largo/Alto
+  height: number;
 
-  @Column({ default: true })
-  isActive !: boolean;
+  // NUEVO: Rotación (en grados, 0-360)
+  @Column({ type: 'float', default: 0 })
+  rotation: number;
 
-  // Relación con Zona
-  @ManyToOne(() => Zone, (zone) => zone.tables, { onDelete: 'CASCADE' })
+  // NUEVO: Forma de la mesa (para dibujarla bien)
+  // 'rect' | 'circle' | 'custom'
+  @Column({ default: 'rect' })
+  shape: string;
+
+  // NUEVO: Capacidad (sillas)
+  @Column({ type: 'int', default: 4 })
+  seats: number;
+
+  @Column({ default: false })
+  isReserved: boolean;
+
+  @ManyToOne(() => Zone, (zone) => zone.tables)
   @JoinColumn({ name: 'zone_id' })
-  zone !: Zone;
-
-  // Solución: Relación agregada correctamente sin texto basura
-  @OneToMany(() => Reservation, (reservation) => reservation.table)
-  reservations !: Reservation[];
+  zone: Zone;
 }

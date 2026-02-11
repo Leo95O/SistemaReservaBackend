@@ -47,4 +47,15 @@ export class UsersService {
       select: ['id', 'email', 'password', 'role', 'fullName', 'isActive'] 
     });
   }
+  // En UsersService:
+
+async update(id: string, updateUserDto: any) {
+  // Lógica pendiente
+  return `This action updates a #${id} user`;
+}
+
+async remove(id: string) {
+  // Lógica pendiente
+  return `This action removes a #${id} user`;
+}
 }
