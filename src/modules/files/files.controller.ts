@@ -1,42 +1,46 @@
-import { Controller, Post, UseInterceptors, UploadedFile, BadRequestException, Get, Param, Res } from '@nestjs/common';
-import { ConfigService } from '@nestjs/config'; // <--- Importar ConfigService
+import { 
+  Controller, 
+  Post, 
+  UseInterceptors, 
+  UploadedFile, 
+  BadRequestException, 
+  ParseFilePipe, 
+  FileTypeValidator, 
+  MaxFileSizeValidator 
+} from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { Response } from 'express';
-import * as path from 'path';
-import * as fs from 'fs';
+import { ConfigService } from '@nestjs/config';
 
 @Controller('files')
 export class FilesController {
-  // Inyectamos ConfigService
   constructor(private readonly configService: ConfigService) {}
 
   @Post('upload')
-  @UseInterceptors(FileInterceptor('file'))
-  uploadFile(@UploadedFile() file: Express.Multer.File) {
+  @UseInterceptors(FileInterceptor('file')) // 'file' es el nombre del campo en el Form-Data
+  uploadFile(
+    @UploadedFile(
+      new ParseFilePipe({
+        validators: [
+          // 1. Validar Tipo (Regex para imágenes)
+          new FileTypeValidator({ fileType: '.(png|jpeg|jpg|webp)' }),
+          // 2. Validar Tamaño (5MB)
+          new MaxFileSizeValidator({ maxSize: 5 * 1024 * 1024 }), 
+        ],
+      }),
+    )
+    file: Express.Multer.File,
+  ) {
     if (!file) {
       throw new BadRequestException('No se ha subido ningún archivo');
     }
 
-    // Obtenemos la URL base del entorno, si no existe usa localhost como fallback
+    // Construir URL pública
+    // Usa la variable de entorno API_URL o localhost por defecto
     const baseUrl = this.configService.get<string>('API_URL') || 'http://localhost:3000';
     
-    // Construimos la URL dinámica
-    const secureUrl = `${baseUrl}/api/v1/files/product/${file.filename}`;
-    
-    return {
-      originalName: file.originalname,
-      filename: file.filename,
-      url: secureUrl,
-    };
-  }
+    // La ruta debe coincidir con la configuración estática en main.ts
+    const url = `${baseUrl}/uploads/zones/${file.filename}`;
 
-  @Get('product/:imagename')
-  findProductImage(@Param('imagename') imagename: string, @Res() res: Response) {
-    const filePath = path.join(process.cwd(), 'uploads', imagename);
-    if (fs.existsSync(filePath)) {
-        return res.sendFile(filePath);
-    } else {
-        throw new BadRequestException('Imagen no encontrada');
-    }
+    return { url };
   }
 }

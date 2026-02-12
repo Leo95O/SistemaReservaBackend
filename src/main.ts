@@ -1,34 +1,38 @@
-import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common';
-import { NestFactory, Reflector } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core'; // 1. Importar Reflector
 import { AppModule } from './app.module';
-import { NestExpressApplication } from '@nestjs/platform-express'; // IMPORTANTE
-import * as path from 'path';
+import { ValidationPipe, ClassSerializerInterceptor } from '@nestjs/common'; // 2. Importar Interceptor
+import { NestExpressApplication } from '@nestjs/platform-express';
+import { join } from 'path';
 
 async function bootstrap() {
-  // 1. Especificar el tipo genérico NestExpressApplication
+  // Especificar NestExpressApplication para usar assets estáticos
   const app = await NestFactory.create<NestExpressApplication>(AppModule);
-
-  app.useGlobalPipes(
-    new ValidationPipe({
-      whitelist: true, 
-      forbidNonWhitelisted: true, 
-      transform: true, 
-    }),
-  );
-
-  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
 
   app.setGlobalPrefix('api/v1');
 
-  // 2. SERVIR ARCHIVOS ESTÁTICOS
-  // Esto permite acceder a http://localhost:3000/uploads/mi-imagen.jpg directamente
-  app.useStaticAssets(path.join(__dirname, '..', 'uploads'), {
-    prefix: '/uploads/', // Prefijo virtual en la URL
+  // --- PIPES GLOBALES (Validación) ---
+  app.useGlobalPipes(
+    new ValidationPipe({
+      whitelist: true,
+      forbidNonWhitelisted: true,
+      transform: true,
+    }),
+  );
+
+  // --- INTERCEPTORES GLOBALES (Seguridad/Serialización) ---
+  // Esto activa los decoradores @Exclude() y @Expose() en tus entidades
+  app.useGlobalInterceptors(new ClassSerializerInterceptor(app.get(Reflector)));
+
+  // --- ARCHIVOS ESTÁTICOS (Imágenes) ---
+  // Expone la carpeta './uploads' en la URL '/uploads/'
+  app.useStaticAssets(join(__dirname, '..', 'uploads'), {
+    prefix: '/uploads/',
   });
 
-  // Habilitar CORS es vital para que Angular pueda enviar imágenes
+  // --- CORS (Para que Angular pueda conectarse) ---
   app.enableCors();
 
-  await app.listen(3000);
+  await app.listen(process.env.PORT || 3000);
+  console.log(`Application is running on: ${await app.getUrl()}`);
 }
 bootstrap();
