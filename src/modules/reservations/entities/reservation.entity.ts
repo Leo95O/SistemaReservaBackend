@@ -1,13 +1,13 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToOne, JoinColumn } from 'typeorm';
-import { TableEntity } from '../../tables/entities/table.entity';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToMany, JoinTable } from 'typeorm';
+import { TableEntity } from '@modules/tables/entities/table.entity';
 
 export enum ReservationStatus {
-  PENDING = 'PENDING',       // Solicitada (falta confirmar)
-  CONFIRMED = 'CONFIRMED',   // Confirmada por el local (Bloquea mesa)
-  SEATED = 'SEATED',         // Clientes comiendo (Mesa en Rojo)
-  COMPLETED = 'COMPLETED',   // Pagaron y se fueron (Libera mesa)
-  CANCELED = 'CANCELED',     // Cancelada por cliente/local
-  NO_SHOW = 'NO_SHOW',       // No se presentaron
+  PENDING = 'PENDING',
+  CONFIRMED = 'CONFIRMED',
+  SEATED = 'SEATED',
+  COMPLETED = 'COMPLETED',
+  CANCELED = 'CANCELED',
+  NO_SHOW = 'NO_SHOW',
 }
 
 @Entity('reservations')
@@ -27,7 +27,7 @@ export class Reservation {
   // --- LÓGICA TEMPORAL ---
   
   @Column('timestamp')
-  startTime: Date; // Reemplaza a reservationTime para ser más explícito
+  startTime: Date;
 
   @Column('int', { default: 90 }) 
   duration: number; // Duración estimada en minutos
@@ -45,20 +45,18 @@ export class Reservation {
   status: ReservationStatus;
 
   @Column('text', { nullable: true })
-  notes: string; // Notas de alergias o preferencias
+  notes: string;
 
-  // --- RELACIONES ---
+  // --- RELACIONES (MULTIPLE TABLES) ---
   
-  @ManyToOne(() => TableEntity, { nullable: true, onDelete: 'SET NULL' })
-  @JoinColumn({ name: 'table_id' })
-  table: TableEntity;
-
-  @Column({ nullable: true }) 
-  tableId: string;
+  // Cambio a ManyToMany para permitir agrupar mesas
+  @ManyToMany(() => TableEntity)
+  @JoinTable({ name: 'reservation_tables' }) // Tabla intermedia automática
+  tables: TableEntity[];
 
   @CreateDateColumn()
   createdAt: Date;
 
   @UpdateDateColumn()
   updatedAt: Date;
-} 
+}

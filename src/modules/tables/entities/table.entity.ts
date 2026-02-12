@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, ManyToOne, JoinColumn } from 'typeorm';
-import { Zone } from '../../zones/entities/zone.entity';
+import { Zone } from '@modules/zones/entities/zone.entity';
 
 
 export enum TableShape {

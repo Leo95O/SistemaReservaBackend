@@ -1,4 +1,4 @@
-import { IsString, IsNotEmpty, IsOptional, IsEmail, IsInt, Min, IsDateString, IsUUID } from 'class-validator';
+import { IsString, IsNotEmpty, IsOptional, IsEmail, IsInt, Min, IsDateString, IsArray, ArrayMinSize, IsUUID } from 'class-validator';
 
 export class CreateReservationDto {
   @IsString()
@@ -13,14 +13,14 @@ export class CreateReservationDto {
   @IsOptional()
   customerPhone?: string;
 
-  @IsDateString() // Valida formato ISO 8601 (YYYY-MM-DDTHH:mm:ssZ)
+  @IsDateString()
   @IsNotEmpty()
   startTime: string;
 
   @IsInt()
   @Min(30, { message: 'La duración mínima es de 30 minutos' })
   @IsOptional()
-  duration?: number; // Si no lo envían, el backend pondrá 90 min
+  duration?: number;
 
   @IsInt()
   @Min(1)
@@ -30,7 +30,9 @@ export class CreateReservationDto {
   @IsOptional()
   notes?: string;
 
-  @IsUUID()
-  @IsNotEmpty()
-  tableId: string;
+  // CAMBIO: Aceptamos múltiples mesas
+  @IsArray()
+  @ArrayMinSize(1, { message: 'Debes seleccionar al menos una mesa' })
+  @IsUUID('4', { each: true, message: 'ID de mesa inválido' })
+  tableIds: string[];
 }

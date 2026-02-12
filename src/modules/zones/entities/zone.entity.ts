@@ -1,5 +1,5 @@
 import { Entity, PrimaryGeneratedColumn, Column, OneToMany, CreateDateColumn, UpdateDateColumn } from 'typeorm';
-import { TableEntity } from '../../tables/entities/table.entity';
+import { TableEntity } from '@modules/tables/entities/table.entity';
 import { ManyToOne, JoinColumn } from 'typeorm';
 import { Branch } from '@modules/branches/entities/branch.entity';
 

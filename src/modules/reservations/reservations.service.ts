@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, Between } from 'typeorm'; // Importante: Between es necesario para findByDate
+import { Repository, Between, In } from 'typeorm'; // Importamos In
 import { Reservation, ReservationStatus } from './entities/reservation.entity';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { TableEntity } from '@modules/tables/entities/table.entity';
@@ -17,21 +17,16 @@ export class ReservationsService {
 
   // --- HELPER: VALIDAR HORARIO DE LA SEDE ---
   private validateBranchSchedule(branch: any, startTime: Date, durationMinutes: number) {
-    // Si la sede no tiene horario configurado, permitimos la reserva (o puedes lanzar error)
     if (!branch || !branch.schedule) return; 
 
-    // 1. Obtener día de la semana ('mon', 'tue', etc.)
     const days = ['sun', 'mon', 'tue', 'wed', 'thu', 'fri', 'sat'];
     const dayKey = days[startTime.getDay()];
-
     const daySchedule = branch.schedule[dayKey];
 
-    // 2. Verificar si abre ese día (isOpen: true)
     if (!daySchedule || !daySchedule.isOpen) {
       throw new BadRequestException(`El local está cerrado los ${dayKey}`);
     }
 
-    // 3. Convertir horas a minutos del día (ej: "08:00" -> 480)
     const getMinutes = (timeStr: string) => {
       const [hours, mins] = timeStr.split(':').map(Number);
       return hours * 60 + mins;
@@ -40,11 +35,9 @@ export class ReservationsService {
     const openTime = getMinutes(daySchedule.open);
     const closeTime = getMinutes(daySchedule.close);
     
-    // Calculamos inicio y fin de la reserva en minutos desde las 00:00
     const reservationStart = startTime.getHours() * 60 + startTime.getMinutes();
     const reservationEnd = reservationStart + durationMinutes;
 
-    // 4. Validar que la reserva esté COMPLETAMENTE dentro del horario
     if (reservationStart < openTime || reservationEnd > closeTime) {
       throw new BadRequestException(
         `La reserva (${startTime.getHours()}:${startTime.getMinutes()}) está fuera del horario de atención (${daySchedule.open} - ${daySchedule.close})`
@@ -52,67 +45,68 @@ export class ReservationsService {
     }
   }
 
-  // --- ALGORITMO CORE: Verificar Disponibilidad (Collision Detection) ---
+  // --- ALGORITMO CORE: Verificar Disponibilidad ---
   async checkTableAvailability(tableId: string, startTime: Date, durationMinutes: number): Promise<boolean> {
     const requestedEnd = new Date(startTime.getTime() + durationMinutes * 60000);
     
+    // NOTA: Al cambiar a ManyToMany, la query cambia ligeramente.
+    // Buscamos reservas que tengan ESA mesa en su lista de 'tables'
     const conflictingReservation = await this.reservationRepository.createQueryBuilder('reservation')
-      .where('reservation.tableId = :tableId', { tableId })
+      .innerJoin('reservation.tables', 'table') // Unir con la relación tables
+      .where('table.id = :tableId', { tableId })
       .andWhere('reservation.status IN (:...activeStatuses)', { 
         activeStatuses: [ReservationStatus.PENDING, ReservationStatus.CONFIRMED, ReservationStatus.SEATED] 
       })
-      // Lógica de Solapamiento: (StartA < EndB) AND (EndA > StartB)
       .andWhere(`
         (reservation.startTime < :requestedEnd) AND 
         (reservation.startTime + (reservation.duration * interval '1 minute') > :requestedStart)
       `, { requestedStart: startTime, requestedEnd: requestedEnd })
       .getOne();
 
-    return !conflictingReservation; // Retorna true si NO hay conflicto
+    return !conflictingReservation; 
   }
 
-  // --- CREAR RESERVA (Con todas las validaciones) ---
+  // --- CREAR RESERVA (MULTI-MESA) ---
   async create(createReservationDto: CreateReservationDto): Promise<Reservation> {
-    const { tableId, startTime: startTimeStr, duration = 90, ...data } = createReservationDto;
+    const { tableIds, startTime: startTimeStr, duration = 90, ...data } = createReservationDto;
     const startTime = new Date(startTimeStr);
 
-    // 1. Cargar Mesa + Zona + Sede (Branch)
-    // Necesitamos 'zone.branch' para acceder al schedule
-    const table = await this.tableRepository.findOne({
-      where: { id: tableId },
+    // 1. Cargar TODAS las mesas solicitadas
+    const tables = await this.tableRepository.find({
+      where: { id: In(tableIds) },
       relations: ['zone', 'zone.branch'], 
     });
 
-    if (!table) throw new NotFoundException(`Mesa ${tableId} no encontrada`);
-    if (!table.isActive) throw new BadRequestException('Esta mesa no está disponible (Inactiva/Mantenimiento)');
-
-    // 2. Validar Capacidad (Pax)
-    if (data.pax > table.seats) {
-       // Puedes comentar esto si permites "apretar" gente
-       throw new BadRequestException(`La mesa solo tiene capacidad para ${table.seats} personas`);
+    if (tables.length !== tableIds.length) {
+      throw new BadRequestException('Alguna de las mesas seleccionadas no existe');
     }
 
-    // 3. VALIDACIÓN DE HORARIO DE SEDE
-    if (table.zone && table.zone.branch) {
-      this.validateBranchSchedule(table.zone.branch, startTime, duration);
-    } else {
-        // Log de advertencia para el desarrollador
-        console.warn(`La mesa ${tableId} pertenece a una zona sin Sede o Horario configurado.`);
+    // 2. Validar cada mesa (Ciclo)
+    for (const table of tables) {
+      // A. Validar estado físico
+      if (!table.isActive) {
+        throw new BadRequestException(`La mesa "${table.name}" no está disponible (Inactiva)`);
+      }
+
+      // B. Validar Horario de Sede
+      if (table.zone && table.zone.branch) {
+        this.validateBranchSchedule(table.zone.branch, startTime, duration);
+      }
+
+      // C. Validar Colisión (Disponibilidad)
+      const isAvailable = await this.checkTableAvailability(table.id, startTime, duration);
+      if (!isAvailable) {
+        throw new ConflictException(`La mesa "${table.name}" ya está reservada en ese horario`);
+      }
     }
 
-    // 4. VALIDACIÓN DE COLISIÓN (Disponibilidad)
-    const isAvailable = await this.checkTableAvailability(tableId, startTime, duration);
-    if (!isAvailable) {
-      throw new ConflictException('La mesa ya está reservada en ese horario (solapamiento)');
-    }
-
-    // 5. Guardar Reserva
+    // 3. Guardar Reserva con Relación Múltiple
     const reservation = this.reservationRepository.create({
       ...data,
-      tableId,
       startTime,
       duration,
       status: ReservationStatus.CONFIRMED,
+      tables: tables, // TypeORM guarda la relación en la tabla intermedia
     });
 
     return this.reservationRepository.save(reservation);
@@ -120,24 +114,20 @@ export class ReservationsService {
 
   findAll() {
     return this.reservationRepository.find({
-      relations: ['table'],
+      relations: ['tables'], // Traer array de mesas
       order: { startTime: 'ASC' }
     });
   }
 
-  // Método para el Frontend: Ver reservas de un día específico
   async findByDate(dateStr: string) {
     const startOfDay = new Date(dateStr);
     startOfDay.setHours(0,0,0,0);
-    
     const endOfDay = new Date(dateStr);
     endOfDay.setHours(23,59,59,999);
 
     return this.reservationRepository.find({
-      where: {
-        startTime: Between(startOfDay, endOfDay)
-      },
-      relations: ['table'],
+      where: { startTime: Between(startOfDay, endOfDay) },
+      relations: ['tables'],
       order: { startTime: 'ASC' }
     });
   }
