@@ -17,7 +17,57 @@ export class ReservationsService {
     private readonly tableRepository: Repository<TableEntity>,
   ) {}
 
-  // --- HELPER: VALIDAR HORARIO DE LA SEDE ---
+  // --- 1. HISTORIAL DEL CLIENTE (Optimizado) ---
+  // Endpoint: GET /reservations/my-bookings
+  async findMyReservations(user: User) {
+    return this.reservationRepository.find({
+      where: { user: { id: user.id } }, // Filtro seguro por token
+      relations: [
+        'tables', 
+        'tables.zone', 
+        'tables.zone.branch'
+      ], // Traemos toda la jerarquía para mostrar info completa
+      order: { startTime: 'DESC' }, // Las más recientes primero
+    });
+  }
+
+  // --- 2. DASHBOARD OPERATIVO (Admin) ---
+  // Endpoint: GET /reservations/dashboard
+  async getDailyDashboard(dateString: string, branchId?: string) {
+    // Definir rango del día completo (00:00:00 - 23:59:59)
+    const startOfDay = new Date(dateString);
+    startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(dateString);
+    endOfDay.setHours(23, 59, 59, 999);
+
+    // QueryBuilder para control total y performance
+    const query = this.reservationRepository.createQueryBuilder('reservation')
+      // Relaciones necesarias para la operación
+      .leftJoinAndSelect('reservation.tables', 'table')
+      .leftJoinAndSelect('table.zone', 'zone')
+      .leftJoinAndSelect('zone.branch', 'branch')
+      
+      // JOIN SELECTIVO DE USUARIO (Seguridad)
+      // Solo traemos datos públicos, NUNCA el password o roles
+      .leftJoin('reservation.user', 'user')
+      .addSelect(['user.id', 'user.fullName', 'user.email'])
+      
+      // Filtro de Fecha
+      .where('reservation.startTime BETWEEN :start AND :end', { start: startOfDay, end: endOfDay })
+      
+      // Orden cronológico
+      .orderBy('reservation.startTime', 'ASC');
+
+    // Filtro opcional por Sede (si el admin quiere ver solo una sucursal)
+    if (branchId) {
+      query.andWhere('branch.id = :branchId', { branchId });
+    }
+
+    return query.getMany();
+  }
+
+  // --- MÉTODOS CORE DE NEGOCIO ---
+
   private validateBranchSchedule(branch: any, startTime: Date, durationMinutes: number) {
     if (!branch || !branch.schedule) return; 
 
@@ -47,7 +97,6 @@ export class ReservationsService {
     }
   }
 
-  // --- ALGORITMO CORE: Verificar Disponibilidad ---
   async checkTableAvailability(tableId: string, startTime: Date, durationMinutes: number): Promise<boolean> {
     const requestedEnd = new Date(startTime.getTime() + durationMinutes * 60000);
     
@@ -66,38 +115,33 @@ export class ReservationsService {
     return !conflictingReservation; 
   }
 
-  // --- CREAR RESERVA (HÍBRIDA + MULTI-MESA) ---
   async create(createReservationDto: CreateReservationDto, currentUser?: User): Promise<Reservation> {
     const { tableIds, startTime: startTimeStr, duration = 90, ...data } = createReservationDto;
     const startTime = new Date(startTimeStr);
 
-    // --- 1. LÓGICA DE USUARIO VS GUEST ---
     let finalCustomerName = data.customerName;
     let finalCustomerPhone = data.customerPhone;
     let finalUser = null;
 
+    // Lógica Híbrida: Admin (Manual) vs Cliente (App)
     if (currentUser) {
         const isAdmin = currentUser.roles.includes(Role.ADMIN);
         
         if (isAdmin) {
-            // Caso B: ADMIN creando reserva manual
             if (!finalCustomerName) {
                 throw new BadRequestException('Como Administrador, debes ingresar el nombre del cliente manualmente.');
             }
-            // finalUser se queda null (Reserva a nombre de un tercero)
         } else {
-            // Caso A: CLIENT creando su propia reserva
-            finalCustomerName = currentUser.fullName; // Autocompletar
-            finalUser = currentUser; // Vincular cuenta
+            finalCustomerName = currentUser.fullName;
+            finalUser = currentUser;
         }
     } else {
-        // Caso C: Guest / Sin Login
+        // Guest
         if (!finalCustomerName) {
              throw new BadRequestException('El nombre del cliente es obligatorio.');
         }
     }
 
-    // --- 2. CARGAR Y VALIDAR MESAS ---
     const tables = await this.tableRepository.find({
       where: { id: In(tableIds) },
       relations: ['zone', 'zone.branch'], 
@@ -107,25 +151,21 @@ export class ReservationsService {
       throw new BadRequestException('Alguna de las mesas seleccionadas no existe');
     }
 
-    // Validar integridad de Zona
+    // Validaciones de Negocio
     const firstZoneId = tables[0].zone?.id;
     const allSameZone = tables.every(t => t.zone?.id === firstZoneId);
     if (!allSameZone) throw new BadRequestException('No se pueden unir mesas de diferentes zonas.');
 
-    // Validar Mantenimiento
     const zone = tables[0].zone;
     if (zone && zone.isUnderMaintenance) {
       throw new ServiceUnavailableException(`La zona "${zone.name}" está en Mantenimiento.`);
     }
 
-    // --- 3. VALIDAR DISPONIBILIDAD (Bucle) ---
     for (const table of tables) {
       if (!table.isActive) throw new BadRequestException(`La mesa "${table.name}" no está activa`);
 
       if (table.zone && table.zone.branch) {
         this.validateBranchSchedule(table.zone.branch, startTime, duration);
-      } else {
-         console.warn(`La mesa ${table.name} no tiene sede configurada.`);
       }
 
       const isAvailable = await this.checkTableAvailability(table.id, startTime, duration);
@@ -134,7 +174,6 @@ export class ReservationsService {
       }
     }
 
-    // --- 4. GUARDAR RESERVA ---
     const reservation = this.reservationRepository.create({
       ...data,
       customerName: finalCustomerName,
