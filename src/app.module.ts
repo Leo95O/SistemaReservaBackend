@@ -11,7 +11,8 @@ import { BranchesModule } from './modules/branches/branches.module';
 import { ZonesModule } from './modules/zones/zones.module';
 import { TablesModule } from './modules/tables/tables.module';
 import { ReservationsModule } from './modules/reservations/reservations.module';
-import { FilesModule } from './modules/files/files.module'; // <--- EL NUEVO
+import { FilesModule } from './modules/files/files.module';
+import { BlueprintsModule } from './modules/blueprints/blueprints.module';
 
 // Core
 import { RedisModule } from './core/redis/redis.module';
@@ -30,14 +31,15 @@ import { RedisModule } from './core/redis/redis.module';
       synchronize: true, // Recuerda: false en producción
     }),
     
-    // REGISTRO DE MÓDULOS (Sin esto, no existen endpoints)
+    // REGISTRO DE MÓDULOS
     UsersModule,
     AuthModule,
-    BranchesModule,     // Ya tenía la entidad actualizada
-    ZonesModule,        // Ya tiene el Batch Update
-    TablesModule,       // Ya tiene la geometría
-    ReservationsModule, // Ya tiene la lógica de colisión
-    FilesModule,        // Ya sube imágenes
+    BranchesModule,
+    ZonesModule,
+    TablesModule,
+    ReservationsModule,
+    FilesModule,
+    BlueprintsModule,
     RedisModule,
   ],
   controllers: [AppController],

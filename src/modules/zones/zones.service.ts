@@ -1,19 +1,27 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
 import { Zone } from './entities/zone.entity';
 import { TableEntity } from '@modules/tables/entities/table.entity';
+import { Blueprint } from '@modules/blueprints/entities/blueprint.entity';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { UpdateZoneDto } from './dto/update-zone.dto';
 import { UpdateLayoutDto } from './dto/update-layout.dto';
+import { InstantiateZoneDto } from './dto/instantiate-zone.dto';
 
 @Injectable()
 export class ZonesService {
   constructor(
     @InjectRepository(Zone)
     private readonly zoneRepository: Repository<Zone>,
+    
+    @InjectRepository(Blueprint)
+    private readonly blueprintRepository: Repository<Blueprint>,
+    
     private readonly dataSource: DataSource,
   ) {}
+
+  // --- CRUD ESTÁNDAR ---
 
   create(createZoneDto: CreateZoneDto) {
     const zone = this.zoneRepository.create(createZoneDto);
@@ -50,9 +58,84 @@ export class ZonesService {
     return this.zoneRepository.remove(zone);
   }
 
-  // --- FIX: Batch Layout Update (Corregido) ---
+  // --- 1. INSTANCIACIÓN (CLONACIÓN DE BLUEPRINT) ---
+  async instantiateBlueprint(dto: InstantiateZoneDto) {
+    const { blueprintId, branchId, name } = dto;
+
+    // A. Obtener el Diseño Maestro
+    const blueprint = await this.blueprintRepository.findOneBy({ id: blueprintId });
+    if (!blueprint) throw new NotFoundException('Blueprint no encontrado');
+
+    const queryRunner = this.dataSource.createQueryRunner();
+    await queryRunner.connect();
+    await queryRunner.startTransaction();
+
+    try {
+      // B. Crear la Zona Real (Copiando dimensiones y muros)
+      const newZone = queryRunner.manager.create(Zone, {
+        name: name,
+        width: blueprint.width,
+        height: blueprint.height,
+        walls: blueprint.walls, // Copia física de los muros
+        backgroundImageUrl: blueprint.previewImageUrl, // Render inicial como fondo
+        branchId: branchId,
+        blueprintId: blueprint.id,
+        isUnderMaintenance: true, // Nace bloqueada para ajustes iniciales
+      });
+
+      const savedZone = await queryRunner.manager.save(newZone);
+
+      // C. Instanciar Mesas (Convertir JSON a Entidades Reales)
+      if (blueprint.furnitureLayout && blueprint.furnitureLayout.length > 0) {
+        const realTables = blueprint.furnitureLayout.map((item: any, index: number) => {
+          return queryRunner.manager.create(TableEntity, {
+            name: `Mesa ${index + 1}`, // Nombre genérico inicial
+            x: item.x || 0,
+            y: item.y || 0,
+            width: item.width || 1,
+            height: item.height || 1,
+            rotation: item.rotation || 0,
+            shape: item.shape || 'rect',
+            seats: item.seats || 4,
+            zone: savedZone, // Vincular a la nueva zona
+          });
+        });
+        await queryRunner.manager.save(realTables);
+      }
+
+      await queryRunner.commitTransaction();
+      
+      // Retornar la zona completa con mesas
+      return this.findOne(savedZone.id);
+
+    } catch (err) {
+      await queryRunner.rollbackTransaction();
+      const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
+      throw new BadRequestException('Error al instanciar el plano: ' + errorMessage);
+    } finally {
+      await queryRunner.release();
+    }
+  }
+
+  // --- 2. LOCKING MECHANISM ---
+  async setMaintenanceStatus(id: string, status: boolean) {
+    const zone = await this.zoneRepository.findOneBy({ id });
+    if (!zone) throw new NotFoundException(`Zona con ID ${id} no encontrada`);
+    
+    zone.isUnderMaintenance = status;
+    return this.zoneRepository.save(zone);
+  }
+
+  // --- 3. BATCH LAYOUT UPDATE (Protegido por Lock) ---
   async updateLayout(zoneId: string, dto: UpdateLayoutDto) {
     const zone = await this.findOne(zoneId);
+
+    // GUARD: Solo permitir edición si está en mantenimiento
+    if (!zone.isUnderMaintenance) {
+      throw new ConflictException(
+        'La zona está OPERATIVA. Debes ponerla en Mantenimiento (Lock) antes de editar su estructura.'
+      );
+    }
 
     const queryRunner = this.dataSource.createQueryRunner();
     await queryRunner.connect();
@@ -70,8 +153,7 @@ export class ZonesService {
       if (tablesToUpdate && tablesToUpdate.length > 0) {
         for (const tableData of tablesToUpdate) {
           const { id, ...updateData } = tableData;
-          
-          // FIX 1: Usar la relación 'zone' en lugar de 'zoneId' implícito
+          // Validar relación usando el objeto zone
           await queryRunner.manager.update(
             TableEntity, 
             { id, zone: { id: zoneId } }, 
@@ -96,7 +178,6 @@ export class ZonesService {
 
     } catch (err) {
       await queryRunner.rollbackTransaction();
-      // FIX 2: Cast de 'err' a Error o any para acceder a .message
       const errorMessage = err instanceof Error ? err.message : 'Error desconocido';
       throw new BadRequestException('Error al guardar el diseño: ' + errorMessage);
     } finally {

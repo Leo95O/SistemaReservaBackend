@@ -2,7 +2,8 @@ import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/commo
 import { ZonesService } from './zones.service';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { UpdateZoneDto } from './dto/update-zone.dto';
-import { UpdateLayoutDto } from './dto/update-layout.dto'; // Importar el nuevo DTO
+import { UpdateLayoutDto } from './dto/update-layout.dto';
+import { InstantiateZoneDto } from './dto/instantiate-zone.dto';
 
 @Controller('zones')
 export class ZonesController {
@@ -11,6 +12,12 @@ export class ZonesController {
   @Post()
   create(@Body() createZoneDto: CreateZoneDto) {
     return this.zonesService.create(createZoneDto);
+  }
+
+  // --- NUEVO: Instanciación de Blueprint ---
+  @Post('instantiate-blueprint')
+  instantiate(@Body() dto: InstantiateZoneDto) {
+    return this.zonesService.instantiateBlueprint(dto);
   }
 
   @Get()
@@ -28,7 +35,18 @@ export class ZonesController {
     return this.zonesService.update(id, updateZoneDto);
   }
   
-  // --- NUEVO ENDPOINT: Guardar Diseño del Mapa ---
+  // --- LOCKING MECHANISM ---
+  @Patch(':id/lock')
+  lock(@Param('id') id: string) {
+    return this.zonesService.setMaintenanceStatus(id, true);
+  }
+
+  @Patch(':id/unlock')
+  unlock(@Param('id') id: string) {
+    return this.zonesService.setMaintenanceStatus(id, false);
+  }
+
+  // --- BATCH LAYOUT UPDATE ---
   @Patch(':id/layout')
   updateLayout(
     @Param('id') id: string, 
