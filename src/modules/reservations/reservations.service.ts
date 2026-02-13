@@ -4,6 +4,8 @@ import { Repository, Between, In } from 'typeorm';
 import { Reservation, ReservationStatus } from './entities/reservation.entity';
 import { CreateReservationDto } from './dto/create-reservation.dto';
 import { TableEntity } from '@modules/tables/entities/table.entity';
+import { User } from '@modules/users/entities/user.entity';
+import { Role } from '@modules/auth/enums/role.enum';
 
 @Injectable()
 export class ReservationsService {
@@ -49,7 +51,6 @@ export class ReservationsService {
   async checkTableAvailability(tableId: string, startTime: Date, durationMinutes: number): Promise<boolean> {
     const requestedEnd = new Date(startTime.getTime() + durationMinutes * 60000);
     
-    // Validar si la mesa choca con otra reserva existente
     const conflictingReservation = await this.reservationRepository.createQueryBuilder('reservation')
       .innerJoin('reservation.tables', 'table') 
       .where('table.id = :tableId', { tableId })
@@ -65,12 +66,38 @@ export class ReservationsService {
     return !conflictingReservation; 
   }
 
-  // --- CREAR RESERVA (MULTI-MESA con VALIDACIONES AVANZADAS) ---
-  async create(createReservationDto: CreateReservationDto): Promise<Reservation> {
+  // --- CREAR RESERVA (HÍBRIDA + MULTI-MESA) ---
+  async create(createReservationDto: CreateReservationDto, currentUser?: User): Promise<Reservation> {
     const { tableIds, startTime: startTimeStr, duration = 90, ...data } = createReservationDto;
     const startTime = new Date(startTimeStr);
 
-    // 1. Cargar mesas con relaciones completas
+    // --- 1. LÓGICA DE USUARIO VS GUEST ---
+    let finalCustomerName = data.customerName;
+    let finalCustomerPhone = data.customerPhone;
+    let finalUser = null;
+
+    if (currentUser) {
+        const isAdmin = currentUser.roles.includes(Role.ADMIN);
+        
+        if (isAdmin) {
+            // Caso B: ADMIN creando reserva manual
+            if (!finalCustomerName) {
+                throw new BadRequestException('Como Administrador, debes ingresar el nombre del cliente manualmente.');
+            }
+            // finalUser se queda null (Reserva a nombre de un tercero)
+        } else {
+            // Caso A: CLIENT creando su propia reserva
+            finalCustomerName = currentUser.fullName; // Autocompletar
+            finalUser = currentUser; // Vincular cuenta
+        }
+    } else {
+        // Caso C: Guest / Sin Login
+        if (!finalCustomerName) {
+             throw new BadRequestException('El nombre del cliente es obligatorio.');
+        }
+    }
+
+    // --- 2. CARGAR Y VALIDAR MESAS ---
     const tables = await this.tableRepository.find({
       where: { id: In(tableIds) },
       relations: ['zone', 'zone.branch'], 
@@ -80,50 +107,43 @@ export class ReservationsService {
       throw new BadRequestException('Alguna de las mesas seleccionadas no existe');
     }
 
-    // --- A. VALIDACIÓN: INTEGRIDAD DE ZONA (Adjacency Check) ---
+    // Validar integridad de Zona
     const firstZoneId = tables[0].zone?.id;
     const allSameZone = tables.every(t => t.zone?.id === firstZoneId);
-    
-    if (!allSameZone) {
-      throw new BadRequestException('No se pueden unir mesas de diferentes zonas en una misma reserva.');
-    }
+    if (!allSameZone) throw new BadRequestException('No se pueden unir mesas de diferentes zonas.');
 
-    // --- B. VALIDACIÓN: MANTENIMIENTO (Lock Check) ---
+    // Validar Mantenimiento
     const zone = tables[0].zone;
     if (zone && zone.isUnderMaintenance) {
-      throw new ServiceUnavailableException(
-        `La zona "${zone.name}" está en Mantenimiento. No se aceptan reservas por el momento.`
-      );
+      throw new ServiceUnavailableException(`La zona "${zone.name}" está en Mantenimiento.`);
     }
 
-    // 2. Validar cada mesa (Ciclo)
+    // --- 3. VALIDAR DISPONIBILIDAD (Bucle) ---
     for (const table of tables) {
-      // Estado Físico
-      if (!table.isActive) {
-        throw new BadRequestException(`La mesa "${table.name}" no está activa`);
-      }
+      if (!table.isActive) throw new BadRequestException(`La mesa "${table.name}" no está activa`);
 
-      // Horario de Sede
       if (table.zone && table.zone.branch) {
         this.validateBranchSchedule(table.zone.branch, startTime, duration);
       } else {
-        console.warn(`La mesa ${table.name} no tiene sede configurada.`);
+         console.warn(`La mesa ${table.name} no tiene sede configurada.`);
       }
 
-      // Disponibilidad Temporal
       const isAvailable = await this.checkTableAvailability(table.id, startTime, duration);
       if (!isAvailable) {
         throw new ConflictException(`La mesa "${table.name}" ya está reservada en ese horario`);
       }
     }
 
-    // 3. Guardar Reserva
+    // --- 4. GUARDAR RESERVA ---
     const reservation = this.reservationRepository.create({
       ...data,
+      customerName: finalCustomerName,
+      customerPhone: finalCustomerPhone,
       startTime,
       duration,
       status: ReservationStatus.CONFIRMED,
       tables: tables,
+      user: finalUser,
     });
 
     return this.reservationRepository.save(reservation);
@@ -131,9 +151,24 @@ export class ReservationsService {
 
   findAll() {
     return this.reservationRepository.find({
-      relations: ['tables'], 
+      relations: ['tables', 'user'], 
       order: { startTime: 'ASC' }
     });
+  }
+
+  async findOne(id: string) {
+      const reservation = await this.reservationRepository.findOne({
+          where: { id },
+          relations: ['tables', 'user']
+      });
+      if (!reservation) throw new NotFoundException('Reserva no encontrada');
+      return reservation;
+  }
+
+  async cancel(id: string) {
+      const reservation = await this.findOne(id);
+      reservation.status = ReservationStatus.CANCELED;
+      return this.reservationRepository.save(reservation);
   }
 
   async findByDate(dateStr: string) {

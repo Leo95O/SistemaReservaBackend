@@ -1,5 +1,6 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToMany, JoinTable } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, ManyToMany, JoinTable, ManyToOne, JoinColumn } from 'typeorm';
 import { TableEntity } from '@modules/tables/entities/table.entity';
+import { User } from '@modules/users/entities/user.entity';
 
 export enum ReservationStatus {
   PENDING = 'PENDING',
@@ -25,7 +26,6 @@ export class Reservation {
   customerPhone: string;
 
   // --- LÓGICA TEMPORAL ---
-  
   @Column('timestamp')
   startTime: Date;
 
@@ -33,7 +33,6 @@ export class Reservation {
   duration: number; // Duración estimada en minutos
 
   // --- CAPACIDAD ---
-
   @Column('int')
   pax: number;
 
@@ -47,12 +46,20 @@ export class Reservation {
   @Column('text', { nullable: true })
   notes: string;
 
-  // --- RELACIONES (MULTIPLE TABLES) ---
+  // --- RELACIONES ---
   
-  // Cambio a ManyToMany para permitir agrupar mesas
+  // 1. Relación con Mesas (N:M)
   @ManyToMany(() => TableEntity)
-  @JoinTable({ name: 'reservation_tables' }) // Tabla intermedia automática
+  @JoinTable({ name: 'reservation_tables' })
   tables: TableEntity[];
+
+  // 2. Relación con Usuario (Puede ser null si es invitado o creado por admin)
+  @ManyToOne(() => User, (user) => user.reservations, { nullable: true, onDelete: 'SET NULL' })
+  @JoinColumn({ name: 'user_id' })
+  user: User;
+
+  @Column({ nullable: true })
+  userId: string;
 
   @CreateDateColumn()
   createdAt: Date;

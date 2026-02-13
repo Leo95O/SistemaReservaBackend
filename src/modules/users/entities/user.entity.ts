@@ -1,12 +1,8 @@
-import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, BeforeInsert, BeforeUpdate } from 'typeorm';
+import { Entity, PrimaryGeneratedColumn, Column, CreateDateColumn, UpdateDateColumn, BeforeInsert, BeforeUpdate, OneToMany } from 'typeorm';
 import { Exclude } from 'class-transformer';
 import * as bcrypt from 'bcrypt';
-
-// Definimos roles simples para empezar
-export enum UserRole {
-  ADMIN = 'admin',
-  STAFF = 'staff',
-}
+import { Role } from '../../auth/enums/role.enum'; // Asegúrate de crear este archivo
+import { Reservation } from '../../reservations/entities/reservation.entity';
 
 @Entity('users')
 export class User {
@@ -19,17 +15,26 @@ export class User {
   @Column()
   fullName: string;
 
-  // @Exclude hace que este campo NO se envíe en el JSON de respuesta
-  // ¡Seguridad básica!
+  // @Exclude evita que el password salga en los JSON de respuesta
+  @Exclude()
   @Column()
-  @Exclude() 
   password: string;
 
-  @Column({ type: 'enum', enum: UserRole, default: UserRole.STAFF })
-  role: UserRole;
+  // --- NUEVO: SISTEMA DE ROLES (RBAC) ---
+  @Column({ 
+    type: 'enum', 
+    enum: Role, 
+    array: true, // Array para soportar múltiples roles
+    default: [Role.CLIENT] 
+  })
+  roles: Role[];
 
   @Column({ default: true })
   isActive: boolean;
+
+  // --- RELACIÓN: HISTORIAL DE RESERVAS ---
+  @OneToMany(() => Reservation, (reservation) => reservation.user)
+  reservations: Reservation[];
 
   @CreateDateColumn()
   createdAt: Date;
@@ -37,16 +42,13 @@ export class User {
   @UpdateDateColumn()
   updatedAt: Date;
 
-  // --- HOOKS (Calidad Enterprise) ---
-  // Antes de insertar o actualizar, encriptamos la contraseña automáticamente
+  // --- HOOKS DE ENCRIPTACIÓN ---
   @BeforeInsert()
   @BeforeUpdate()
   async hashPassword() {
-    // Solo encriptar si la contraseña ha cambiado y no está ya encriptada
-    // (Bcrypt siempre genera strings largos, si es corto es texto plano)
-    if (this.password && this.password.length < 60) {
-      const salt = await bcrypt.genSalt();
-      this.password = await bcrypt.hash(this.password, salt);
+    if (this.password && !this.password.startsWith('$2b$')) {
+       const salt = await bcrypt.genSalt();
+       this.password = await bcrypt.hash(this.password, salt);
     }
   }
 }

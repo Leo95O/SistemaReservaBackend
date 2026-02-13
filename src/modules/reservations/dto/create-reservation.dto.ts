@@ -2,7 +2,7 @@ import { IsString, IsNotEmpty, IsOptional, IsEmail, IsInt, Min, IsDateString, Is
 
 export class CreateReservationDto {
   @IsString()
-  @IsNotEmpty()
+  @IsOptional()
   customerName: string;
 
   @IsEmail()
