@@ -8,7 +8,7 @@ import { Roles } from '@modules/auth/decorators/roles.decorator';
 import { Role } from '@modules/auth/enums/role.enum';
 
 @Controller('blueprints')
-@UseGuards(JwtAuthGuard, RolesGuard) // 1. Valida Token, 2. Valida Rol
+@UseGuards(JwtAuthGuard, RolesGuard) // Seguridad Base: Token válido + Roles
 export class BlueprintsController {
   constructor(private readonly blueprintsService: BlueprintsService) {}
 
@@ -19,12 +19,13 @@ export class BlueprintsController {
   }
 
   @Get()
-  // Sin @Roles -> Accesible para cualquier usuario logueado (CLIENT o ADMIN)
+  @Roles(Role.ADMIN) // 🔒 AHORA PROTEGIDO: Solo ADMIN ve la lista
   findAll() {
     return this.blueprintsService.findAll();
   }
 
   @Get(':id')
+  @Roles(Role.ADMIN) // 🔒 AHORA PROTEGIDO: Solo ADMIN ve el detalle
   findOne(@Param('id') id: string) {
     return this.blueprintsService.findOne(id);
   }
