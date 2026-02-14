@@ -13,6 +13,12 @@ export class CreateBranchDto {
   @IsOptional()
   phone?: string;
 
+  // --- NUEVO CAMPO ---
+  // Usamos IsString para permitir URLs completas o paths relativos
+  @IsString()
+  @IsOptional()
+  imageUrl?: string;
+
   @IsObject()
   @IsOptional()
   schedule?: Record<string, any>;

@@ -14,14 +14,14 @@ export class Branch {
   @Column('text', { nullable: true })
   phone: string;
 
-  // --- CONFIGURACIÓN DE HORARIOS ---
-  
+  // --- NUEVO CAMPO ---
+  @Column('text', { nullable: true })
+  imageUrl: string;
+
   // Guardamos el horario como un objeto JSON simple
-  // Ej: { "mon": { "open": "08:00", "close": "22:00", "isOpen": true }, ... }
   @Column({ type: 'jsonb', nullable: true })
   schedule: Record<string, any>;
 
-  // Duración por defecto de las reservas en esta sede (minutos)
   @Column({ type: 'int', default: 90 })
   defaultReservationDuration: number;
 
