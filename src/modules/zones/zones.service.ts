@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, BadRequestException, ConflictException } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
-import { Repository, DataSource } from 'typeorm';
+import { Repository, DataSource, FindOptionsWhere } from 'typeorm'; // Importar FindOptionsWhere
 import { Zone } from './entities/zone.entity';
 import { TableEntity } from '@modules/tables/entities/table.entity';
 import { Blueprint } from '@modules/blueprints/entities/blueprint.entity';
@@ -28,8 +28,17 @@ export class ZonesService {
     return this.zoneRepository.save(zone);
   }
 
-  findAll() {
+  // --- MODIFICADO: FILTRO POR SUCURSAL ---
+  findAll(branchId?: string) {
+    // Objeto de filtro dinámico
+    const where: FindOptionsWhere<Zone> = {};
+    
+    if (branchId) {
+      where.branchId = branchId; // Filtra si llega el parámetro
+    }
+
     return this.zoneRepository.find({
+      where, // Inyectamos el filtro (vacío o con ID)
       relations: ['tables'],
       order: { name: 'ASC' },
     });
@@ -62,7 +71,6 @@ export class ZonesService {
   async instantiateBlueprint(dto: InstantiateZoneDto) {
     const { blueprintId, branchId, name } = dto;
 
-    // A. Obtener el Diseño Maestro
     const blueprint = await this.blueprintRepository.findOneBy({ id: blueprintId });
     if (!blueprint) throw new NotFoundException('Blueprint no encontrado');
 
@@ -71,25 +79,23 @@ export class ZonesService {
     await queryRunner.startTransaction();
 
     try {
-      // B. Crear la Zona Real (Copiando dimensiones y muros)
       const newZone = queryRunner.manager.create(Zone, {
         name: name,
         width: blueprint.width,
         height: blueprint.height,
-        walls: blueprint.walls, // Copia física de los muros
-        backgroundImageUrl: blueprint.previewImageUrl, // Render inicial como fondo
+        walls: blueprint.walls,
+        backgroundImageUrl: blueprint.previewImageUrl,
         branchId: branchId,
         blueprintId: blueprint.id,
-        isUnderMaintenance: true, // Nace bloqueada para ajustes iniciales
+        isUnderMaintenance: true, 
       });
 
       const savedZone = await queryRunner.manager.save(newZone);
 
-      // C. Instanciar Mesas (Convertir JSON a Entidades Reales)
       if (blueprint.furnitureLayout && blueprint.furnitureLayout.length > 0) {
         const realTables = blueprint.furnitureLayout.map((item: any, index: number) => {
           return queryRunner.manager.create(TableEntity, {
-            name: `Mesa ${index + 1}`, // Nombre genérico inicial
+            name: `Mesa ${index + 1}`,
             x: item.x || 0,
             y: item.y || 0,
             width: item.width || 1,
@@ -97,15 +103,13 @@ export class ZonesService {
             rotation: item.rotation || 0,
             shape: item.shape || 'rect',
             seats: item.seats || 4,
-            zone: savedZone, // Vincular a la nueva zona
+            zone: savedZone,
           });
         });
         await queryRunner.manager.save(realTables);
       }
 
       await queryRunner.commitTransaction();
-      
-      // Retornar la zona completa con mesas
       return this.findOne(savedZone.id);
 
     } catch (err) {
@@ -126,11 +130,10 @@ export class ZonesService {
     return this.zoneRepository.save(zone);
   }
 
-  // --- 3. BATCH LAYOUT UPDATE (Protegido por Lock) ---
+  // --- 3. BATCH LAYOUT UPDATE ---
   async updateLayout(zoneId: string, dto: UpdateLayoutDto) {
     const zone = await this.findOne(zoneId);
 
-    // GUARD: Solo permitir edición si está en mantenimiento
     if (!zone.isUnderMaintenance) {
       throw new ConflictException(
         'La zona está OPERATIVA. Debes ponerla en Mantenimiento (Lock) antes de editar su estructura.'
@@ -144,16 +147,13 @@ export class ZonesService {
     try {
       const { tablesToCreate, tablesToUpdate, tablesToDelete } = dto;
 
-      // A. ELIMINAR
       if (tablesToDelete && tablesToDelete.length > 0) {
         await queryRunner.manager.delete(TableEntity, tablesToDelete);
       }
 
-      // B. ACTUALIZAR
       if (tablesToUpdate && tablesToUpdate.length > 0) {
         for (const tableData of tablesToUpdate) {
           const { id, ...updateData } = tableData;
-          // Validar relación usando el objeto zone
           await queryRunner.manager.update(
             TableEntity, 
             { id, zone: { id: zoneId } }, 
@@ -162,7 +162,6 @@ export class ZonesService {
         }
       }
 
-      // C. CREAR
       if (tablesToCreate && tablesToCreate.length > 0) {
         const newTables = tablesToCreate.map(t => {
           return queryRunner.manager.create(TableEntity, {

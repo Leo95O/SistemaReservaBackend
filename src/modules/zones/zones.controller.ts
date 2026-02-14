@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, Query } from '@nestjs/common'; // Importar Query
 import { ZonesService } from './zones.service';
 import { CreateZoneDto } from './dto/create-zone.dto';
 import { UpdateZoneDto } from './dto/update-zone.dto';
@@ -14,15 +14,15 @@ export class ZonesController {
     return this.zonesService.create(createZoneDto);
   }
 
-  // --- NUEVO: Instanciación de Blueprint ---
   @Post('instantiate-blueprint')
   instantiate(@Body() dto: InstantiateZoneDto) {
     return this.zonesService.instantiateBlueprint(dto);
   }
 
+  // --- MODIFICADO: SOPORTE PARA QUERY PARAM ---
   @Get()
-  findAll() {
-    return this.zonesService.findAll();
+  findAll(@Query('branchId') branchId?: string) {
+    return this.zonesService.findAll(branchId);
   }
 
   @Get(':id')
@@ -35,7 +35,6 @@ export class ZonesController {
     return this.zonesService.update(id, updateZoneDto);
   }
   
-  // --- LOCKING MECHANISM ---
   @Patch(':id/lock')
   lock(@Param('id') id: string) {
     return this.zonesService.setMaintenanceStatus(id, true);
@@ -46,7 +45,6 @@ export class ZonesController {
     return this.zonesService.setMaintenanceStatus(id, false);
   }
 
-  // --- BATCH LAYOUT UPDATE ---
   @Patch(':id/layout')
   updateLayout(
     @Param('id') id: string, 
